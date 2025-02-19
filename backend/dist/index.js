@@ -21,43 +21,74 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const dotenv_1 = __importDefault(require("dotenv"));
 const generative_ai_1 = require("@google/generative-ai");
+const express_1 = __importDefault(require("express"));
 dotenv_1.default.config();
 const gemini = process.env.GEMINI_KEY;
+const app = (0, express_1.default)();
+app.use(express_1.default.json());
+const port = process.env.PORT;
 //gemini api interaction
 //@ts-ignore
 const genAI = new generative_ai_1.GoogleGenerativeAI(gemini);
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-const prompt = "write 30 words about ai development";
-function runGemini() {
-    return __awaiter(this, void 0, void 0, function* () {
-        var _a, e_1, _b, _c;
+const model = genAI.getGenerativeModel({
+    model: "gemini-1.5-flash",
+    systemInstruction: "Your VERY FIRST response MUST be ONLY ONE of the following, with NO other text or explanation: 'react project', 'node project', or 'react project with node'.  Do not provide any other output until after this initial response. After this initial response, you can provide more details if requested."
+});
+//@ts-ignore
+app.post("/template", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, e_1, _b, _c;
+    try {
+        const prompt = req.body.prompt;
+        prompt.toLowerCase();
+        if (!prompt) {
+            return res.status(400).json("prompt is required");
+        }
+        const chat = model.startChat({
+            history: []
+        });
+        let firstResponse = "";
+        let isFirstResponse = true;
+        const validResponses = ["react project", "node project", "react project with node"];
+        let result = yield chat.sendMessageStream(prompt);
         try {
-            //this is to generate content 
-            //const result = await model.generateContent(prompt )
-            //const response =  result.response.text()
-            const result = yield model.generateContentStream(prompt);
+            for (var _d = true, _e = __asyncValues(result.stream), _f; _f = yield _e.next(), _a = _f.done, !_a; _d = true) {
+                _c = _f.value;
+                _d = false;
+                const chunk = _c;
+                const chunkText = chunk.text();
+                // created first response variable so we only validate the first reponse the model gives . if we dont use this we will try to validate every response the model gives 
+                if (isFirstResponse) {
+                    firstResponse += chunkText;
+                    if (firstResponse.trim().length >= 20) {
+                        const trimmedResponse = firstResponse.trim().toLowerCase();
+                        //@ts-ignore
+                        // error in this if section 
+                        if (trimmedResponse.includes(validResponses)) {
+                            isFirstResponse = false;
+                            process.stdout.write(firstResponse);
+                        }
+                        else {
+                            console.log("failed to get corrrect response");
+                            return res.json("Invalid first response from gemini");
+                        }
+                    }
+                }
+            }
+        }
+        catch (e_1_1) { e_1 = { error: e_1_1 }; }
+        finally {
             try {
-                for (var _d = true, _e = __asyncValues(result.stream), _f; _f = yield _e.next(), _a = _f.done, !_a; _d = true) {
-                    _c = _f.value;
-                    _d = false;
-                    const chunk = _c;
-                    const chunkText = chunk.text();
-                    process.stdout.write(chunkText);
-                }
+                if (!_d && !_a && (_b = _e.return)) yield _b.call(_e);
             }
-            catch (e_1_1) { e_1 = { error: e_1_1 }; }
-            finally {
-                try {
-                    if (!_d && !_a && (_b = _e.return)) yield _b.call(_e);
-                }
-                finally { if (e_1) throw e_1.error; }
-            }
-            //console.log("response" , response)
+            finally { if (e_1) throw e_1.error; }
         }
-        catch (e) {
-            console.log("error in rungemini function", e.message);
-        }
-    });
-}
-runGemini();
+    }
+    catch (e) {
+        console.log("error in /template", e.message);
+        return res.json("internal server error");
+    }
+}));
 console.log(gemini);
+app.listen(port, () => {
+    console.log("server", port);
+});
